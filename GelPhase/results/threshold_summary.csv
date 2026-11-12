@@ -1,0 +1,7 @@
+﻿Condition,Group,Threshold_Breakpoint (%),Low_Conc_Slope1,High_Conc_Slope2,Baseline_Intercept
+G2 2hr,C2,5.0,0.229,6.541,6.09
+G2 2hr,E2-1,5.0,0.035,7.114,5.12
+G2 2hr,E2-2,7.68,0.151,3.811,4.86
+G2 4hr,C2,4.53,0.072,13.316,6.87
+G2 4hr,E2-1,5.33,0.23,5.064,4.65
+G2 4hr,E2-2,10.11,0.184,2.75,4.54

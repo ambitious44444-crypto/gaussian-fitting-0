@@ -82,11 +82,24 @@ data/
 ```
 *(Each CSV should simply contain 2 columns: column 0 = pixel distance $x$, column 1 = gray value intensity $y$)*.
 
-### 3. Execution
-* **On Windows**: Double-click `run_windows.bat` (1-click execution).
-* **Via Command Line**:
+### 3. Execution Options
+
+#### Option A: Interactive Streamlit Web App (Recommended for Cloud & Local)
+* **Local Run**:
+  ```bash
+  streamlit run app.py
+  ```
+  *(Or double-click `run_windows.bat` on Windows)*.
+* **Deploy to Streamlit Community Cloud**:
+  1. Push this repository to GitHub.
+  2. Go to [share.streamlit.io](https://share.streamlit.io) and click **New app**.
+  3. Select your repository and branch (`main`).
+  4. Set **Main file path** to: `app.py` (or `GelPhase/app.py` if nested).
+  5. Click **Deploy!**
+
+#### Option B: Headless Command Line (CLI Batch Processing)
 ```bash
-python run_analysis.py --data ../path/to/data --output results
+python run_analysis.py --data path/to/data --output results
 ```
 
 ---

@@ -13,14 +13,23 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-echo Installing dependencies if needed...
+echo Installing / verifying dependencies...
 python -m pip install -q -r requirements.txt
 
-echo Running GelPhase Pipeline...
-python run_analysis.py
+echo.
+echo Choose execution mode:
+echo [1] Launch Interactive Streamlit Web App (Recommended)
+echo [2] Run Batch CLI Pipeline in Terminal
+echo.
+set /p choice="Enter choice (1 or 2, default is 1): "
+
+if "%choice%"=="2" (
+    echo Running GelPhase CLI Pipeline...
+    python run_analysis.py
+) else (
+    echo Launching Streamlit Web App at http://localhost:8501 ...
+    python -m streamlit run app.py
+)
 
 echo.
-echo =====================================================================
-echo  Analysis Complete! Check the 'results/' folder for CSVs and plots.
-echo =====================================================================
 pause

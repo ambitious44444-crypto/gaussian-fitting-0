@@ -142,20 +142,7 @@ if uploaded_file is not None:
                 ax1.legend()
                 ax1.grid(True, linestyle=":", alpha=0.6)
                 
-                # 子圖 2：AIC 評估曲線
-                aic_df = pd.DataFrame(models_record)
-                ax2.plot(aic_df["波峰數量 (N)"], aic_df["AIC 分數"], marker="o", color="steelblue")
-                ax2.scatter([best_n], [best_aic], color="red", s=80, zorder=5, label=f"最佳模型 (N={best_n})")
-                ax2.set_title("赤池資訊量準則 (AIC) 評估曲線 — 越低越佳")
-                ax2.set_xlabel("高斯分量數量 (N)")
-                ax2.set_ylabel("AIC 分數")
-                ax2.set_xticks(aic_df["波峰數量 (N)"])
-                ax2.legend()
-                ax2.grid(True, linestyle=":", alpha=0.6)
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-                
+                                
                 # 顯示參數表與 AIC 比較表
                 st.subheader(f"最佳模型參數輸出（共 {best_n} 個高斯分佈）")
                 st.dataframe(res_df, use_container_width=True)

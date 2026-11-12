@@ -1,6 +1,13 @@
 import os
-import io
+import sys
 import re
+import io
+
+# Ensure the directory containing app.py is in sys.path for Streamlit Cloud
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -8,282 +15,166 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
 
+# Import core analytical functions from gelphase package
 from gelphase.deconvolution import fit_gel_lane
 from gelphase.threshold import fit_saturation_threshold
 from gelphase.visualizer import plot_spectral_decomposition, plot_threshold_fit
 
-# Page configuration
+# =========================================================================
+# Page Setup & Configuration
+# =========================================================================
 st.set_page_config(
-    page_title="GelPhase: Biomolecular Gel Deconvolution & Threshold Analyzer",
+    page_title="GelPhase - Automated Gel Profile Analyzer",
     page_icon="🧬",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Custom Styling
+st.title("🧬 GelPhase: Automated Gel Profile & Threshold Analyzer")
 st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #1e3d59;
-        margin-bottom: 0.2rem;
-    }
-    .sub-header {
-        font-size: 1.1rem;
-        color: #17b978;
-        font-weight: 500;
-        margin-bottom: 1.5rem;
-    }
-    .metric-card {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 15px;
-        border-left: 5px solid #17b978;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="main-header">🧬 GelPhase: Biomolecular Gel Deconvolution & Threshold Analyzer</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Automated Gel Electrophoresis Lane Deconvolution & Saturation Phase-Transition Identification</div>', unsafe_allow_html=True)
-
-# Sidebar
-st.sidebar.image("https://img.shields.io/badge/BIOMOD-Open--Source-orange?style=for-the-badge", use_container_width=True)
-st.sidebar.title("Navigation & Settings")
-app_mode = st.sidebar.radio(
-    "Choose Mode:",
-    ["📊 Benchmark Dashboard (Pre-loaded Data)", "🧪 Custom Gel Analysis (Upload CSV)", "📐 Mathematical Theory & Methods", "📝 Citation & Wiki Attribution"]
-)
-
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**GelPhase Pipeline**:
-1. Multi-peak Gaussian deconvolution
-2. AICc-based model arbitration
-3. Continuous broken-line threshold regression
+**Welcome to GelPhase!** An open-source computational tool for automated gel electrophoresis lane deconvolution 
+and phase-transition saturation threshold identification.
 """)
 
+st.info("💡 **Instructions**: Upload your ImageJ line-profile CSV files below. The tool will automatically deconvolve the bands using multi-Gaussian modeling (with AICc arbitration) and fit a continuous piecewise linear saturation threshold.")
+
 # =========================================================================
-# Mode 1: Benchmark Dashboard
+# File Upload Section (Drag & Drop)
 # =========================================================================
-if app_mode == "📊 Benchmark Dashboard (Pre-loaded Data)":
-    st.subheader("📊 BIOMOD Serum Stability Benchmark Results (FBS Assay)")
-    st.markdown("""
-    This dashboard presents the experimental validation across **24 gel lane profiles** evaluated under two reaction times (2hr vs 4hr)
-    and biological replicates (C2, E2-1, E2-2).
-    """)
+uploaded_files = st.file_uploader(
+    "📁 Upload ImageJ Lane Profile CSV Files (Select multiple files):",
+    type=["csv", "txt"],
+    accept_multiple_files=True
+)
+
+if uploaded_files:
+    st.success(f"Successfully selected {len(uploaded_files)} file(s).")
     
-    results_dir = os.path.join(os.path.dirname(__file__), "results")
-    thresh_csv = os.path.join(results_dir, "threshold_summary.csv")
-    master_plot = os.path.join(results_dir, "plots", "master_threshold_comparison.png")
+    st.markdown("### 1. Confirm Concentrations for Each File")
+    st.caption("GelPhase attempts to auto-detect concentrations from filenames (e.g. '...5%...'). Please verify or adjust below:")
     
-    col1, col2 = st.columns([1, 1])
+    file_concs = []
+    cols = st.columns(min(4, len(uploaded_files)))
     
-    if os.path.exists(thresh_csv):
-        df_th = pd.read_csv(thresh_csv)
-        with col1:
-            st.markdown("### 🎯 Critical Saturation Threshold Summary")
-            st.dataframe(df_th, use_container_width=True)
+    for idx, f in enumerate(uploaded_files):
+        # Auto-detect concentration percentage from filename
+        m = re.search(r'(\d+(?:\.\d+)?)%', f.name)
+        detected_conc = float(m.group(1)) if m else float(idx)
+        
+        with cols[idx % 4]:
+            val = st.number_input(
+                f"Conc for {f.name[:20]}...",
+                value=detected_conc,
+                step=0.5,
+                key=f"file_conc_{idx}"
+            )
+            file_concs.append((val, f))
             
-            st.markdown("""
-            > **Key Biological Finding**:
-            > * Four independent datasets (**2hr C2, 2hr E2-1, 4hr C2, 4hr E2-1**) tightly converge on a **~4.7% - 5.3% FBS breakdown threshold**!
-            > * Post-transition kinetic slopes ($s_2$) surge 20–80x higher than pre-transition slopes ($s_1$).
-            """)
-    else:
-        st.warning("threshold_summary.csv not found in results directory.")
-
-    with col2:
-        st.markdown("### 📈 Master Threshold Comparison (2hr vs 4hr)")
-        if os.path.exists(master_plot):
-            st.image(master_plot, use_container_width=True, caption="Multi-Condition Threshold Transition Kinetics")
-        else:
-            st.info("Master plot image not found.")
-
     st.markdown("---")
-    st.markdown("### 🔍 Interactive Condition & Group Inspector")
     
-    cond_choice = st.selectbox("Select Condition:", ["G2 2hr", "G2 4hr"])
-    grp_choice = st.selectbox("Select Sample Group:", ["C2", "E2-1", "E2-2"])
-    
-    plot_folder = os.path.join(results_dir, "plots", f"{cond_choice}_{grp_choice}")
-    thresh_fig = os.path.join(results_dir, "plots", f"threshold_{cond_choice}_{grp_choice}.png")
-    
-    tab_th, tab_spec = st.tabs(["📉 Saturation Threshold Fit", "🔬 Deconvoluted Spectral Bands (0%, 1%, 5%, 10%)"])
-    
-    with tab_th:
-        if os.path.exists(thresh_fig):
-            st.image(thresh_fig, use_container_width=True, caption=f"{cond_choice} {grp_choice} Threshold Fit")
-        else:
-            st.info(f"Threshold figure for {cond_choice} {grp_choice} not found.")
-            
-    with tab_spec:
-        if os.path.exists(plot_folder):
-            c_cols = st.columns(4)
-            concentrations = ["0.0", "1.0", "5.0", "10.0"]
-            for i, conc in enumerate(concentrations):
-                p_file = os.path.join(plot_folder, f"fit_{conc}pct.png")
-                with c_cols[i]:
-                    if os.path.exists(p_file):
-                        st.image(p_file, use_container_width=True, caption=f"Conc: {conc}%")
-                    else:
-                        st.caption(f"No plot for {conc}%")
-        else:
-            st.info(f"Deconvolution plots folder {plot_folder} not found.")
-
-# =========================================================================
-# Mode 2: Custom Gel Analysis (Upload CSV)
-# =========================================================================
-elif app_mode == "🧪 Custom Gel Analysis (Upload CSV)":
-    st.subheader("🧪 Upload & Analyze Your Own Gel Profiles")
-    st.markdown("""
-    Upload your ImageJ line-scan CSV files below. 
-    Each CSV file must contain two columns: **Column 1 = pixel distance ($x$)**, **Column 2 = intensity ($y$)**.
-    """)
-    
-    uploaded_files = st.file_uploader(
-        "Upload ImageJ CSV files (Multiple files allowed)",
-        type=["csv", "txt"],
-        accept_multiple_files=True
-    )
-    
-    if uploaded_files:
-        st.success(f"Uploaded {len(uploaded_files)} file(s).")
+    # Run Button
+    if st.button("🚀 Run GelPhase Deconvolution & Threshold Fitting", type="primary"):
+        # Sort files by concentration
+        file_concs.sort(key=lambda x: x[0])
         
-        # Parse or ask for concentrations
-        st.markdown("#### Specify Concentrations for Uploaded Files")
-        file_concs = []
-        c_cols = st.columns(min(4, len(uploaded_files)))
+        progress = st.progress(0)
+        status = st.empty()
         
-        for idx, file in enumerate(uploaded_files):
-            # Try to auto-detect concentration
-            m = re.search(r'(\d+(?:\.\d+)?)%', file.name)
-            default_val = float(m.group(1)) if m else float(idx)
+        extracted_data = []
+        spectral_figures = []
+        
+        for i, (conc, file_obj) in enumerate(file_concs):
+            status.text(f"Processing ({i+1}/{len(file_concs)}): {file_obj.name} @ {conc}%...")
+            file_obj.seek(0)
             
-            with c_cols[idx % 4]:
-                conc_val = st.number_input(
-                    f"{file.name[:20]}...",
-                    value=default_val,
-                    step=0.5,
-                    key=f"conc_{idx}"
-                )
-                file_concs.append((conc_val, file))
-                
-        if st.button("🚀 Run GelPhase Deconvolution & Threshold Fitting", type="primary"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            extracted_results = []
-            spectral_figs = []
-            
-            # Sort by concentration
-            file_concs.sort(key=lambda x: x[0])
-            
-            for i, (conc, file_obj) in enumerate(file_concs):
-                status_text.text(f"Deconvolving: {file_obj.name} (Conc: {conc}%)...")
-                file_obj.seek(0)
+            try:
+                # Read 2-column CSV (Column 0: pixel/distance x, Column 1: intensity y)
                 df = pd.read_csv(file_obj, header=None)
                 x = df[0].values
                 y = df[1].values
                 
-                # Run deconvolution
+                # Run Multi-Gaussian Deconvolution
                 fit_res = fit_gel_lane(x, y)
-                fig_spec = plot_spectral_decomposition(fit_res, title=f"{file_obj.name} ({conc}%)")
-                spectral_figs.append((conc, fig_spec))
+                fig_spec = plot_spectral_decomposition(
+                    fit_res,
+                    title=f"{file_obj.name} (Conc: {conc}%)"
+                )
+                spectral_figures.append((conc, fig_spec))
                 
-                extracted_results.append({
+                extracted_data.append({
                     "Filename": file_obj.name,
-                    "Concentration": conc,
-                    "Model": fit_res["best_model"],
-                    "AICc": round(fit_res["best_aic"], 1),
-                    "State1_Center_mu": round(fit_res["main_mu"], 2),
-                    "State1_Width_sigma": round(fit_res["main_sigma"], 2),
-                    "Width_StdErr": round(fit_res["main_sigma_err"], 2),
+                    "Concentration (%)": conc,
+                    "Best Model (AICc)": fit_res["best_model"],
+                    "AICc Score": round(fit_res["best_aic"], 1),
+                    "State 1 Center (mu)": round(fit_res["main_mu"], 2),
+                    "State 1 Width (sigma)": round(fit_res["main_sigma"], 2),
+                    "Width StdErr": round(fit_res["main_sigma_err"], 2),
                 })
-                progress_bar.progress((i + 1) / len(file_concs))
+            except Exception as e:
+                st.error(f"Error processing {file_obj.name}: {e}")
                 
-            status_text.text("Fitting continuous saturation threshold...")
-            df_out = pd.DataFrame(extracted_results)
+            progress.progress((i + 1) / len(file_concs))
             
-            # Fit threshold
-            concs = df_out["Concentration"].values
-            sigmas = df_out["State1_Width_sigma"].values
-            sig_errs = df_out["Width_StdErr"].values
+        status.empty()
+        progress.empty()
+        
+        if extracted_data:
+            df_results = pd.DataFrame(extracted_data)
             
-            st.markdown("### 🎯 Analysis Results")
-            st.dataframe(df_out, use_container_width=True)
+            st.markdown("### 2. Extracted Band Parameters")
+            st.dataframe(df_results, use_container_width=True)
+            
+            # CSV Download Button
+            csv_buffer = io.StringIO()
+            df_results.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="📥 Download Extracted Parameters (CSV)",
+                data=csv_buffer.getvalue(),
+                file_name="gelphase_extracted_parameters.csv",
+                mime="text/csv"
+            )
+            
+            st.markdown("---")
+            st.markdown("### 3. Saturation Threshold Analysis (Piecewise Broken-Line Fit)")
+            
+            concs = df_results["Concentration (%)"].values
+            sigmas = df_results["State 1 Width (sigma)"].values
+            sig_errs = df_results["Width StdErr"].values
             
             if len(concs) >= 3:
-                th_res = fit_saturation_threshold(concs, sigmas, sig_errs)
-                fig_th = plot_threshold_fit(th_res, title="Fitted Saturation Threshold")
-                
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Critical Breakpoint (C_th)", f"{th_res['threshold']:.2f} %")
-                m2.metric("Low-Conc Slope (s1)", f"{th_res['slope1']:.3f}")
-                m3.metric("Post-Break Slope (s2)", f"{th_res['slope2']:.3f}")
-                
-                st.pyplot(fig_th)
+                try:
+                    th_res = fit_saturation_threshold(concs, sigmas, sig_errs)
+                    fig_th = plot_threshold_fit(th_res, title="Fitted Saturation Threshold Curve")
+                    
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("🎯 Saturation Threshold (C_th)", f"{th_res['threshold']:.2f} %")
+                    m2.metric("📉 Pre-Transition Slope (s1)", f"{th_res['slope1']:.3f}")
+                    m3.metric("📈 Post-Transition Slope (s2)", f"{th_res['slope2']:.3f}")
+                    m4.metric("📊 Baseline Intercept (y0)", f"{th_res['y_intercept']:.2f}")
+                    
+                    st.pyplot(fig_th)
+                    
+                    # Image Download Button
+                    img_buffer = io.BytesIO()
+                    fig_th.savefig(img_buffer, format="png", dpi=300)
+                    st.download_button(
+                        label="📥 Download Threshold Plot (PNG, 300 DPI)",
+                        data=img_buffer.getvalue(),
+                        file_name="gelphase_saturation_threshold.png",
+                        mime="image/png"
+                    )
+                except Exception as e:
+                    st.error(f"Failed to fit saturation threshold: {e}")
             else:
-                st.warning("At least 3 concentration points are required to compute a saturation threshold.")
+                st.warning("⚠️ At least 3 concentration points are required to compute a saturation threshold.")
                 
-            st.markdown("### 🔬 Deconvoluted Profiles")
+            st.markdown("---")
+            st.markdown("### 4. Deconvoluted Spectral Bands (Individual Fits)")
             spec_cols = st.columns(2)
-            for j, (conc, fig) in enumerate(spectral_figs):
+            for j, (conc, fig) in enumerate(spectral_figures):
                 with spec_cols[j % 2]:
                     st.pyplot(fig)
+else:
+    st.write("👆 Please upload CSV files above to begin analysis.")
 
-# =========================================================================
-# Mode 3: Mathematical Theory & Methods
-# =========================================================================
-elif app_mode == "📐 Mathematical Theory & Methods":
-    st.subheader("📐 Mathematical Modeling & Algorithm Principles")
-    st.markdown("""
-    GelPhase integrates multi-scale biophysical modeling to ensure objective, reproducible analysis:
-    """)
-    
-    st.markdown("#### 1. Multi-Component Gaussian Deconvolution")
-    st.latex(r"y(x) = (\beta_0 + \beta_1 x) + \sum_{i=1}^{M} A_i \exp\left(-\frac{(x - \mu_i)^2}{2\sigma_i^2}\right)")
-    st.markdown("""
-    * $\mu_i$: Migration distance along lane.
-    * $\sigma_i$: Band standard deviation (width), reflecting structural dispersion / degradation.
-    * Linear background $\beta_0 + \beta_1 x$ eliminates gel staining gradients.
-    """)
-    
-    st.markdown("#### 2. Model Selection via Corrected AIC (AICc)")
-    st.latex(r"\text{AICc} = n \ln\left(\frac{\text{RSS}}{n}\right) + 2k + \frac{2k(k + 1)}{n - k - 1}")
-    st.markdown("""
-    Implements Occam's Razor: a third (shoulder) peak is adopted if and only if $\Delta\text{AICc} > 2.0$.
-    """)
-    
-    st.markdown("#### 3. Continuous Piecewise Linear (Broken-Line) NLLS Regression")
-    st.latex(r"\sigma(C) = y_0 + s_1 C + \Delta s \max(0, C - C_{\text{th}})")
-    st.markdown("""
-    * **$C_{\text{th}}$**: Phase-transition saturation breakpoint threshold.
-    * Solved via **Trust Region Reflective (TRF)** non-linear least squares.
-    """)
-
-# =========================================================================
-# Mode 4: Citation & Wiki Attribution
-# =========================================================================
-elif app_mode == "📝 Citation & Wiki Attribution":
-    st.subheader("📝 Citation & Attribution Guidelines for BIOMOD / iGEM")
-    st.markdown("""
-    If you use GelPhase in your competition Wiki, presentation, or scientific publication, please cite as follows:
-    """)
-    
-    st.code("""
-@software{gelphase2026,
-  author = {BIOMOD Research Team and GelPhase Contributors},
-  title = {GelPhase: Automated Biomolecular Gel Lane Profile Deconvolution and Threshold Analyzer},
-  year = {2026},
-  url = {https://github.com/your-username/GelPhase},
-  version = {1.0.0}
-}
-    """, language="latex")
-    
-    st.markdown("#### Suggested Wiki Statement (Attributions Page):")
-    st.info("""
-    "Gel lane profile deconvolution, AICc model selection, and saturation threshold broken-line regressions 
-    were performed using the open-source tool **GelPhase** (developed with assistance from Google DeepMind Antigravity). 
-    The software is publicly archived on GitHub under the MIT License."
-    """)
+st.markdown("---")
+st.caption("GelPhase | Developed for BIOMOD Nanotechnology Research | Licensed under MIT")
